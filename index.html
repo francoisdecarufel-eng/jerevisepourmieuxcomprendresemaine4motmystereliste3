@@ -112,8 +112,8 @@
                 <!-- Consignes -->
                 <div class="bg-blue-50 p-4 rounded-xl border-2 border-blue-200 mb-6 text-slate-700 font-semibold relative">
                     <div class="absolute -top-3 -left-3 bg-blue-500 text-white w-8 h-8 rounded-full flex items-center justify-center font-black border-2 border-white shadow">i</div>
-                    <p class="ml-4 mb-1"><span class="text-blue-700 font-black">1.</span> Trouve et clique sur toutes les lettres des <strong>20 mots cachés</strong> dans la grille.</p>
-                    <p class="ml-4"><span class="text-blue-700 font-black">2.</span> Une fois tous les mots barrés, clique sur les <strong>lettres restantes</strong> (dans l'ordre) pour révéler la phrase mystère !</p>
+                    <p class="ml-4 mb-1"><span class="text-blue-700 font-black">1.</span> Trouve les <strong>20 mots cachés</strong>. Sélectionne-les lettre par lettre dans le bon ordre pour les surligner.</p>
+                    <p class="ml-4"><span class="text-blue-700 font-black">2.</span> Une fois terminé, la <strong>zone mystère apparaîtra</strong> ! Clique sur les lettres restantes (dans l'ordre) pour la révéler.</p>
                 </div>
 
                 <!-- Zone de jeu (Grille + Liste) -->
@@ -143,8 +143,8 @@
                     🎉 Bravo ! Tous les mots sont trouvés ! Clique maintenant sur les lettres restantes...
                 </div>
 
-                <!-- Zone de la phrase mystère -->
-                <div class="mt-6 border-4 border-dashed border-slate-300 rounded-2xl p-6 bg-slate-50 relative">
+                <!-- Zone de la phrase mystère (Cachée au départ) -->
+                <div id="mystery-section" class="hidden mt-6 border-4 border-dashed border-slate-300 rounded-2xl p-6 bg-slate-50 relative">
                     <div class="absolute -top-4 left-6 bg-white px-3 text-slate-500 font-black uppercase tracking-widest text-sm">Phrase Mystère</div>
                     <div id="mystery-phrase-container" class="flex flex-wrap gap-x-6 gap-y-4 justify-center items-end min-h-[60px]">
                         <!-- Blocs générés par JS -->
@@ -201,6 +201,27 @@
             </div>
         </div>
 
+    </div>
+
+    <!-- Modale de Victoire (Cachée par défaut) -->
+    <div id="victory-modal" class="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/80 backdrop-blur-md hidden opacity-0 transition-opacity duration-500 pointer-events-none" data-html2canvas-ignore="true">
+        <div class="bg-white p-10 md:p-14 rounded-[2rem] shadow-2xl max-w-4xl w-[90%] text-center transform scale-90 transition-transform duration-500 shadow-[0_0_80px_rgba(34,197,94,0.3)] border-4 border-green-400 relative overflow-hidden">
+            <!-- Décorations de fond de la modale -->
+            <div class="absolute -top-20 -left-20 w-56 h-56 bg-yellow-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
+            <div class="absolute -bottom-20 -right-20 w-56 h-56 bg-blue-300 rounded-full mix-blend-multiply filter blur-3xl opacity-50"></div>
+            
+            <div class="text-7xl mb-6 animate-bounce relative z-10">🏆</div>
+            <h2 class="text-4xl md:text-5xl font-black text-slate-800 mb-4 uppercase tracking-widest relative z-10">Félicitations !</h2>
+            <p class="text-xl font-bold text-slate-500 mb-8 relative z-10">Tu as découvert la phrase mystère avec succès :</p>
+            
+            <div id="modal-mystery-phrase" class="text-3xl md:text-5xl font-black text-blue-700 bg-blue-50/90 backdrop-blur-sm p-8 rounded-2xl border-4 border-blue-200 leading-normal tracking-wide shadow-inner relative z-10">
+                <!-- Rempli dynamiquement -->
+            </div>
+            
+            <button onclick="closeVictoryModal()" class="mt-10 px-10 py-4 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-white font-black rounded-xl text-xl shadow-lg hover:scale-105 hover:shadow-green-500/50 transition-all duration-300 relative z-10 pointer-events-auto border-2 border-green-300">
+                Super !
+            </button>
+        </div>
     </div>
 
     <script>
@@ -273,6 +294,7 @@
         let gameState = {
             isMysteryMode: false,
             foundWords: new Set(),
+            pendingCells: [], // Lettres actuellement en cours de sélection
             mysteryClickCount: 0
         };
 
@@ -409,7 +431,8 @@
 
                     if (type === 'activite') {
                         cell.classList.add('cell-default', 'cursor-pointer', 'hover:scale-110');
-                        cell.onclick = () => handleCellClick(x, y, cell);
+                        // Utilisation d'un onmousedown au lieu de onclick pour un retour plus réactif
+                        cell.onmousedown = () => handleCellClick(x, y, cell);
                     }
 
                     container.appendChild(cell);
@@ -417,30 +440,139 @@
             }
         }
 
+        // Fonction d'aide pour vérifier si une séquence de cases correspond à un mot caché
+        function isSequenceValidForWord(sequence, word) {
+            const wordCoords = wordCellsMap[word];
+            // Vérification dans le sens normal
+            let validForward = true;
+            for (let i = 0; i < sequence.length; i++) {
+                if (sequence[i].x !== wordCoords[i].x || sequence[i].y !== wordCoords[i].y) {
+                    validForward = false; break;
+                }
+            }
+            if (validForward) return true;
+
+            // Vérification dans le sens inverse (si l'élève sélectionne de la fin vers le début)
+            let validBackward = true;
+            let len = wordCoords.length;
+            for (let i = 0; i < sequence.length; i++) {
+                if (sequence[i].x !== wordCoords[len - 1 - i].x || sequence[i].y !== wordCoords[len - 1 - i].y) {
+                    validBackward = false; break;
+                }
+            }
+            return validBackward;
+        }
+
         function handleCellClick(x, y, cellElement) {
             const data = grid[y][x];
 
             if (!gameState.isMysteryMode) {
-                // PHASE 1 : Recherche de mots (Permet la sélection et désélection libre des lettres valides)
+                // PHASE 1 : Recherche de mots avec contrainte stricte
                 
-                // VÉRIFICATION STRICTE : Si la lettre ne fait pas partie d'un mot, on bloque.
-                if (!data.isWord) {
-                    cellElement.classList.add('animate-pulse', 'bg-red-200');
-                    setTimeout(() => cellElement.classList.remove('animate-pulse', 'bg-red-200'), 400);
-                    return; // On arrête la fonction ici
+                // 1. Est-ce qu'on clique sur la dernière lettre de la séquence en cours ? (Permet d'annuler la dernière lettre cliquée)
+                if (gameState.pendingCells.length > 0) {
+                    const lastPending = gameState.pendingCells[gameState.pendingCells.length - 1];
+                    if (lastPending.x === x && lastPending.y === y) {
+                        gameState.pendingCells.pop();
+                        cellElement.classList.remove('bg-yellow-300', 'border-yellow-500', 'scale-110');
+                        if (data.isFound) cellElement.classList.add('cell-word-found');
+                        else cellElement.classList.add('cell-default', 'hover:scale-110');
+                        return;
+                    }
                 }
 
-                data.isFound = !data.isFound;
-                
-                if (data.isFound) {
-                    cellElement.classList.remove('cell-default', 'hover:scale-110');
-                    cellElement.classList.add('cell-word-found');
+                // 2. Tenter d'ajouter la lettre à la séquence actuelle
+                const newSequence = [...gameState.pendingCells, {x, y}];
+                let validWordsForSequence = WORDS.filter(w => !gameState.foundWords.has(w)).filter(w => isSequenceValidForWord(newSequence, w));
+
+                if (validWordsForSequence.length > 0) {
+                    // Le coup est valide : il continue (ou commence) un mot existant !
+                    gameState.pendingCells.push({x, y});
+                    
+                    cellElement.classList.remove('cell-default', 'hover:scale-110', 'cell-word-found');
+                    cellElement.classList.add('bg-yellow-300', 'border-yellow-500', 'scale-110');
+
+                    // Vérifier si un mot vient d'être complètement sélectionné
+                    const completedWord = validWordsForSequence.find(w => w.length === newSequence.length);
+                    if (completedWord) {
+                        gameState.foundWords.add(completedWord);
+                        
+                        // Figer le mot en vert
+                        gameState.pendingCells.forEach(pos => {
+                            grid[pos.y][pos.x].isFound = true;
+                            const el = document.getElementById(`cell-activite-${pos.x}-${pos.y}`);
+                            el.classList.remove('bg-yellow-300', 'border-yellow-500', 'scale-110');
+                            el.classList.add('cell-word-found');
+                        });
+                        
+                        gameState.pendingCells = []; // Réinitialiser la sélection
+                        
+                        // Mettre à jour la liste UI
+                        const li = document.getElementById(`list-word-${completedWord}`);
+                        const check = document.getElementById(`check-${completedWord}`);
+                        li.classList.add('word-found');
+                        check.classList.remove('border-slate-400');
+                        check.classList.add('border-green-500', 'bg-green-500');
+                        check.innerHTML = `<svg class="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>`;
+                        
+                        // Si tous les mots sont trouvés, passer à la phase Mystère
+                        if (gameState.foundWords.size === WORDS.length) {
+                            gameState.isMysteryMode = true;
+                            document.getElementById('mystery-alert').classList.remove('hidden');
+                            document.getElementById('mystery-section').classList.remove('hidden'); // APPARITION
+                        }
+                    }
                 } else {
-                    cellElement.classList.remove('cell-word-found');
-                    cellElement.classList.add('cell-default', 'hover:scale-110');
+                    // Le coup ne continue pas la séquence actuelle. 
+                    // Est-ce un point de départ valide pour un NOUVEAU mot ?
+                    let validWordsForStart = WORDS.filter(w => !gameState.foundWords.has(w)).filter(w => isSequenceValidForWord([{x, y}], w));
+                    
+                    if (validWordsForStart.length > 0) {
+                        // Annuler l'ancienne séquence inachevée
+                        gameState.pendingCells.forEach(pos => {
+                            const el = document.getElementById(`cell-activite-${pos.x}-${pos.y}`);
+                            el.classList.remove('bg-yellow-300', 'border-yellow-500', 'scale-110');
+                            if (grid[pos.y][pos.x].isFound) el.classList.add('cell-word-found');
+                            else el.classList.add('cell-default', 'hover:scale-110');
+                        });
+                        
+                        // Commencer une nouvelle séquence
+                        gameState.pendingCells = [{x, y}];
+                        cellElement.classList.remove('cell-default', 'hover:scale-110', 'cell-word-found');
+                        cellElement.classList.add('bg-yellow-300', 'border-yellow-500', 'scale-110');
+                        
+                    } else if (data.isFound && gameState.pendingCells.length === 0) {
+                        // Option de correction : Dé-valider un mot complet si on s'est trompé
+                        let wordsToUnfind = data.words.filter(w => gameState.foundWords.has(w));
+                        wordsToUnfind.forEach(w => {
+                            gameState.foundWords.delete(w);
+                            const li = document.getElementById(`list-word-${w}`);
+                            const check = document.getElementById(`check-${w}`);
+                            li.classList.remove('word-found');
+                            check.classList.remove('border-green-500', 'bg-green-500');
+                            check.classList.add('border-slate-400');
+                            check.innerHTML = '';
+                        });
+                        // Recalculer les cellules vertes
+                        for(let cy=0; cy<GRID_SIZE; cy++) {
+                            for(let cx=0; cx<GRID_SIZE; cx++) {
+                                let c = grid[cy][cx];
+                                if (c.isFound) {
+                                    let stillFound = c.words.some(w => gameState.foundWords.has(w));
+                                    if (!stillFound) {
+                                        c.isFound = false;
+                                        document.getElementById(`cell-activite-${cx}-${cy}`).classList.remove('cell-word-found');
+                                        document.getElementById(`cell-activite-${cx}-${cy}`).classList.add('cell-default', 'hover:scale-110');
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Coup invalide (lettre aléatoire ne formant pas de mot)
+                        cellElement.classList.add('animate-pulse', 'bg-red-200');
+                        setTimeout(() => cellElement.classList.remove('animate-pulse', 'bg-red-200'), 400);
+                    }
                 }
-                
-                checkWordsCompletion();
             } else {
                 // PHASE 2 : Mot mystère
                 if (data.isMystery) {
@@ -465,7 +597,9 @@
                                     alertBox.classList.remove('bg-green-100', 'border-green-500', 'text-green-800');
                                     alertBox.classList.add('bg-blue-100', 'border-blue-500', 'text-blue-800');
                                     document.getElementById('mystery-phrase-container').classList.add('scale-105', 'transition-transform');
-                                }, 300);
+                                    
+                                    showVictoryModal();
+                                }, 400);
                             }
                         } else {
                             // Shake animation si mauvais ordre
@@ -580,6 +714,81 @@
                     globalIndex++;
                 }
                 container.appendChild(exclDiv);
+            }
+        }
+
+        function showVictoryModal() {
+            const modal = document.getElementById('victory-modal');
+            const phraseContainer = document.getElementById('modal-mystery-phrase');
+            
+            // Reconstitution de la phrase avec des espaces grâce aux tailles de mots (MYSTERY_CHUNKS)
+            let finalPhrase = "";
+            let letterIndex = 0;
+            MYSTERY_CHUNKS.forEach(chunkLength => {
+                for(let i=0; i<chunkLength; i++) {
+                    if(letterIndex < mysteryLetters.length) {
+                        finalPhrase += mysteryLetters[letterIndex].char;
+                        letterIndex++;
+                    }
+                }
+                finalPhrase += " "; // Ajout d'un espace entre chaque mot
+            });
+            // Ajout de la ponctuation finale (!) s'il en reste
+            while(letterIndex < mysteryLetters.length) {
+                finalPhrase += mysteryLetters[letterIndex].char;
+                letterIndex++;
+            }
+            
+            phraseContainer.innerText = finalPhrase.trim();
+            
+            modal.classList.remove('hidden');
+            void modal.offsetWidth; // Force la mise à jour du DOM
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.classList.add('opacity-100');
+            modal.querySelector('div').classList.remove('scale-90');
+            modal.querySelector('div').classList.add('scale-100');
+            
+            createConfetti();
+        }
+
+        function closeVictoryModal() {
+            const modal = document.getElementById('victory-modal');
+            modal.classList.remove('opacity-100');
+            modal.classList.add('opacity-0');
+            modal.querySelector('div').classList.remove('scale-100');
+            modal.querySelector('div').classList.add('scale-90');
+            setTimeout(() => {
+                modal.classList.add('hidden', 'pointer-events-none');
+            }, 500);
+        }
+
+        function createConfetti() {
+            const colors = ['#4ade80', '#3b82f6', '#facc15', '#f87171', '#a855f7'];
+            for (let i = 0; i < 80; i++) {
+                let confetti = document.createElement('div');
+                confetti.style.position = 'fixed';
+                confetti.style.left = Math.random() * 100 + 'vw';
+                confetti.style.top = '-20px';
+                confetti.style.width = (Math.random() * 12 + 6) + 'px';
+                confetti.style.height = (Math.random() * 16 + 8) + 'px';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.zIndex = '101';
+                confetti.style.pointerEvents = 'none';
+                confetti.style.borderRadius = Math.random() > 0.5 ? '50%' : '3px';
+                document.body.appendChild(confetti);
+
+                let duration = Math.random() * 2 + 2;
+                confetti.animate([
+                    { transform: `translate3d(0,0,0) rotate(0deg)`, opacity: 1 },
+                    { transform: `translate3d(${Math.random()*400 - 200}px, 100vh, 0) rotate(${Math.random()*720}deg)`, opacity: 0 }
+                ], {
+                    duration: duration * 1000,
+                    easing: 'cubic-bezier(.37,0,.63,1)',
+                    fill: 'forwards'
+                });
+
+                // Nettoyage après l'animation
+                setTimeout(() => confetti.remove(), duration * 1000);
             }
         }
 
