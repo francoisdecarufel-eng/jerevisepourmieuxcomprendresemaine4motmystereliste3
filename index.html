@@ -299,91 +299,6 @@
             renderMysteryUI();
         }
 
-        // Ajustement d'échelle pour l'écran (ne touche pas au DOM réel pour html2canvas)
-        function resizeScreen() {
-            const wrapper = document.getElementById('scale-wrapper');
-            const windowWidth = window.innerWidth;
-            if (windowWidth < 850) {
-                const scale = windowWidth / 850;
-                wrapper.style.transform = `scale(${scale})`;
-            } else {
-                wrapper.style.transform = 'scale(1)';
-            }
-        }
-        window.addEventListener('resize', resizeScreen);
-        resizeScreen();
-
-        // Fonction d'exportation d'image
-        function exportToPNG(elementId, filename) {
-            const element = document.getElementById(elementId);
-            
-            // Pour garantir une capture parfaite, on remonte brièvement au top et on reset le scale
-            const oldScroll = window.scrollY;
-            window.scrollTo(0,0);
-            const wrapper = document.getElementById('scale-wrapper');
-            const oldTransform = wrapper.style.transform;
-            wrapper.style.transform = 'scale(1)';
-
-            setTimeout(() => {
-                html2canvas(element, {
-                    scale: 2, // Haute Définition
-                    useCORS: true,
-                    backgroundColor: '#ffffff'
-                }).then(canvas => {
-                    const link = document.createElement('a');
-                    link.download = filename;
-                    link.href = canvas.toDataURL('image/png');
-                    link.click();
-                    
-                    // Restauration de l'état
-                    wrapper.style.transform = oldTransform;
-                    window.scrollTo(0, oldScroll);
-                });
-            }, 100);
-        }
-
-        const RAW_WORDS = ["ACCIDENT", "BOND", "CENT", "CHOCOLAT", "DEBOUT", "ENDROIT", "LAIT", "MOUVEMENT", "NORD", "PONT", "PORT", "QUART", "ROUE", "SANG", "SORT", "TOIT", "ANTENNE", "CADRAN", "ECUREUIL", "SOURIS"];
-        // Normalisation (retrait des accents pour la grille)
-        const normalizeStr = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
-        const WORDS = RAW_WORDS.map(normalizeStr).sort((a,b) => b.length - a.length); // Plus longs d'abord
-        
-        const GRID_SIZE = 12; // 12x12 = 144 cases
-        let grid = [];
-        let wordCellsMap = {}; // { "ACCIDENT": [{x,y}, ...] }
-        let mysteryLetters = []; // [{char, x, y}, ...]
-        
-        // État du jeu interactif
-        let gameState = {
-            isMysteryMode: false,
-            foundWords: new Set(),
-            mysteryClickCount: 0
-        };
-
-        // Base parfaite de 34 lettres (144 cases - ~110 prises = ~34 restes).
-        // Structure de mots : BRAVO(5) TU(2) ES(2) UN(2) VRAI(4) CHAMPION(8) DE(2) LA(2) LECTURE(7)
-        const BASE_MYSTERY = "BRAVOTUESUNVRAICHAMPIONDELALECTURE";
-        const MYSTERY_CHUNKS = [5, 2, 2, 2, 4, 8, 2, 2, 7];
-
-        function initGame() {
-            let success = false;
-            let attempts = 0;
-            // Algorithme de génération avec essais multiples
-            while (!success && attempts < 50) {
-                success = tryGenerateGrid();
-                attempts++;
-            }
-            if(!success) {
-                console.error("Impossible de générer la grille parfaite après 50 essais.");
-                return;
-            }
-            
-            renderWordList();
-            renderGrid('activite');
-            renderGrid('corrige');
-            renderMysteryUI();
-            renderMysteryCorrige();
-        }
-
         function tryGenerateGrid() {
             grid = Array.from({length: GRID_SIZE}, () => 
                 Array.from({length: GRID_SIZE}, () => ({ 
@@ -664,29 +579,6 @@
                     exclDiv.appendChild(span);
                     globalIndex++;
                 }
-                container.appendChild(exclDiv);
-            }
-        }
-
-        function renderMysteryCorrige() {
-            const container = document.getElementById('mystery-phrase-corrige');
-            container.innerHTML = '';
-            
-            let charIndex = 0;
-            const fullStr = mysteryLetters.map(m => m.char).join('');
-            
-            MYSTERY_CHUNKS.forEach(chunkLength => {
-                const wordDiv = document.createElement('div');
-                wordDiv.className = "flex";
-                wordDiv.innerText = fullStr.substring(charIndex, charIndex + chunkLength);
-                container.appendChild(wordDiv);
-                charIndex += chunkLength;
-            });
-
-            if (charIndex < fullStr.length) {
-                const exclDiv = document.createElement('div');
-                exclDiv.className = "flex ml-2";
-                exclDiv.innerText = fullStr.substring(charIndex);
                 container.appendChild(exclDiv);
             }
         }
